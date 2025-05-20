@@ -1,0 +1,5 @@
+.DS_STORE
+Lab1/data/*
+Lab4/data/*
+.venv/
+__pycache__/
