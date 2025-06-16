@@ -1,0 +1,4 @@
+runs/
+wandb/
+data/
+distill_runs/
