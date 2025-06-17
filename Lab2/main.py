@@ -1,25 +1,25 @@
+import os
+import argparse
 import numpy as np
-import matplotlib.pyplot as plt
-import gymnasium as gym
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-import pygame
+import gymnasium as gym
+import matplotlib.pyplot as plt
 import wandb
-import os
+from utils import make_gif
 
-# Initialize Weights & Biases
-wandb.init(
-    project="reinforce-cartpole",
-    name="run_reinforce",
-    config={"env": "CartPole-v1", "episodes": 1000, "gamma": 0.99, "lr": 1e-2},
-)
+# Monkey-patch for numpy.bool8 compatibility
+np.bool8 = np.bool_
 
-pygame.init()
+# Device config
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# ============================
+# Policy and Value Networks
+# ============================
 class PolicyNet(nn.Module):
     def __init__(self, obs_dim, n_actions):
         super().__init__()
@@ -31,13 +31,20 @@ class PolicyNet(nn.Module):
         return F.softmax(self.fc2(x), dim=-1)
 
 
-def select_action(obs, policy):
-    obs = torch.tensor(obs, dtype=torch.float32, device=device)
-    dist = Categorical(policy(obs))
-    action = dist.sample()
-    return action.item(), dist.log_prob(action)
+class ValueNet(nn.Module):
+    def __init__(self, obs_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(obs_dim, 128)
+        self.fc2 = nn.Linear(128, 1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        return self.fc2(x).squeeze(-1)
 
 
+# ============================
+# Utility Functions
+# ============================
 def compute_returns(rewards, gamma):
     returns = []
     G = 0
@@ -47,123 +54,139 @@ def compute_returns(rewards, gamma):
     return torch.tensor(returns, dtype=torch.float32, device=device)
 
 
-def run_episode(env, policy, maxlen=500):
-    obs, _ = env.reset()
-    log_probs = []
-    rewards = []
+# ============================
+# REINFORCE
+# ============================
+def train_reinforce(env, policy, args):
+    optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
+    rewards_history = []
+    for ep in range(args.episodes):
+        obs, _ = env.reset(seed=args.seed)
+        log_probs, rewards = [], []
+        done = False
+        while not done:
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
+            dist = Categorical(policy(obs_t) / args.temperature)
+            action = dist.sample()
+            log_probs.append(dist.log_prob(action))
+            obs, reward, terminated, truncated, _ = env.step(action.item())
+            rewards.append(reward)
+            done = bool(terminated or truncated)
 
-    for _ in range(maxlen):
-        action, log_prob = select_action(obs, policy)
-        obs, reward, terminated, truncated, _ = env.step(action)
+        returns = compute_returns(rewards, args.gamma)
+        log_probs = torch.stack(log_probs)
+        loss = -(log_probs * (returns - returns.mean()) / (returns.std() + 1e-9)).mean()
 
-        log_probs.append(log_prob)
-        rewards.append(reward)
-
-        if terminated or truncated:
-            break
-
-    return torch.stack(log_probs), rewards
-
-
-def reinforce(
-    policy,
-    env,
-    render_env=None,
-    gamma=0.99,
-    num_episodes=1000,
-    lr=1e-2,
-    checkpoint_dir="checkpoints",
-):
-    optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-
-    running_rewards = [0.0]
-    best_running_reward = float("-inf")
-
-    for episode in range(num_episodes):
-        log_probs, rewards = run_episode(env, policy)
-        returns = compute_returns(rewards, gamma)
-
-        # Standardize returns
-        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
-
-        # Loss computation
-        loss = -(log_probs * returns).mean()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        total_reward = sum(rewards)
+        rewards_history.append(total_reward)
+        if ep % args.log_interval == 0:
+            wandb.log({"reinforce_reward": total_reward, "episode": ep})
+            print(f"REINFORCE Ep {ep}: Reward {total_reward:.2f}")
+    return rewards_history
 
-        # Episode statistics
+
+# ============================
+# PPO
+# ============================
+def train_ppo(env, policy, value_net, args):
+    p_optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
+    v_optimizer = torch.optim.Adam(value_net.parameters(), lr=args.lr)
+    history = []
+    for ep in range(args.episodes):
+        obs, _ = env.reset(seed=args.seed)
+        memories = []
+        done = False
+        while not done:
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
+            dist = Categorical(policy(obs_t) / args.temperature)
+            action = dist.sample()
+            logp = dist.log_prob(action)
+            value = value_net(obs_t)
+            obs, reward, terminated, truncated, _ = env.step(action.item())
+            memories.append((obs_t, action, logp, reward, value))
+            done = bool(terminated or truncated)
+        # compute returns and advantages
+        rewards = [m[3] for m in memories]
+        returns = compute_returns(rewards, args.gamma)
+        values = torch.stack([m[4] for m in memories])
+        advantages = returns - values.detach()
+        # PPO update
+        for _ in range(args.ppo_epochs):
+            for idx, (obs_t, action, old_logp, _, _) in enumerate(memories):
+                dist = Categorical(policy(obs_t) / args.temperature)
+                logp = dist.log_prob(action)
+                ratio = (logp - old_logp).exp()
+                adv = advantages[idx]
+                surr1 = ratio * adv
+                surr2 = torch.clamp(ratio, 1 - args.clip, 1 + args.clip) * adv
+                p_loss = -torch.min(surr1, surr2)
+                v_loss = F.mse_loss(value_net(obs_t), returns[idx])
+                p_optimizer.zero_grad()
+                p_loss.backward()
+                p_optimizer.step()
+                v_optimizer.zero_grad()
+                v_loss.backward()
+                v_optimizer.step()
         episode_reward = sum(rewards)
-        episode_length = len(rewards)
-        entropy = -torch.mean(log_probs)
-        mean_return = returns.mean().item()
-        std_return = returns.std().item()
-
-        # Moving average
-        running_reward = 0.05 * episode_reward + 0.95 * running_rewards[-1]
-        running_rewards.append(running_reward)
-
-        # Logging to Weights & Biases
-        wandb.log(
-            {
-                "episode": episode,
-                "episode_reward": episode_reward,
-                "episode_length": episode_length,
-                "running_avg_reward": running_reward,
-                "loss": loss.item(),
-                "entropy": entropy.item(),
-                "mean_return": mean_return,
-                "std_return": std_return,
-            }
-        )
-
-        # Checkpoint every 100 episodes
-        if episode % 100 == 0:
-            torch.save(policy.state_dict(), f"{checkpoint_dir}/policy_ep{episode}.pt")
-
-        # Save best model
-        if running_reward > best_running_reward:
-            best_running_reward = running_reward
-            torch.save(policy.state_dict(), f"{checkpoint_dir}/best_policy.pt")
-
-        if episode % 100 == 0:
-            print(
-                f"Episode {episode} | Reward: {episode_reward:.2f} | Running Avg: {running_reward:.2f}"
-            )
-
-    return running_rewards
+        history.append(episode_reward)
+        if ep % args.log_interval == 0:
+            wandb.log({"ppo_reward": episode_reward, "episode": ep})
+            print(f"PPO Ep {ep}: Reward {episode_reward:.2f}")
+    return history
 
 
+# ============================
+# Main
+# ============================
 def main():
-    seed = 2112
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    parser = argparse.ArgumentParser(description="RL Trainer")
+    parser.add_argument("--env", type=str, default="CartPole-v1")
+    parser.add_argument(
+        "--algo", type=str, choices=["reinforce", "ppo"], default="reinforce"
+    )
+    parser.add_argument("--episodes", type=int, default=1000)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--lr", type=float, default=1e-2)
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=2112)
+    parser.add_argument("--log_interval", type=int, default=100)
+    parser.add_argument("--ppo_epochs", type=int, default=4)
+    parser.add_argument("--clip", type=float, default=0.2)
+    parser.add_argument("--gif", type=str, default="policy.gif")
+    args = parser.parse_args()
 
-    render_env = gym.make("CartPole-v1", render_mode="human")
-    obs_dim = render_env.observation_space.shape[0]
-    n_actions = render_env.action_space.n
-    render_env.close()
+    wandb.init(
+        project="rl-algos",
+        name=f"reinforce_{args.env}_{args.algo}_temperature{args.temperature}_lr{args.lr}_gamma{args.gamma}",
+        config=vars(args),
+    )
 
-    env = gym.make("CartPole-v1")
-    env.reset(seed=seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
+    env = gym.make(args.env)
+    obs_dim = env.observation_space.shape[0]
+    n_actions = env.action_space.n
     policy = PolicyNet(obs_dim, n_actions).to(device)
 
-    pygame.display.init()
-    rewards = reinforce(policy, env, render_env=None, num_episodes=1000)
-    pygame.display.quit()
+    if args.algo == "ppo":
+        value_net = ValueNet(obs_dim).to(device)
+        history = train_ppo(env, policy, value_net, args)
+    else:
+        history = train_reinforce(env, policy, args)
 
-    plt.plot(rewards)
+    # plot learning curve
+    plt.plot(history)
     plt.xlabel("Episode")
-    plt.ylabel("Running Reward")
-    plt.title("REINFORCE Training on CartPole")
+    plt.ylabel("Reward")
+    plt.title(f"{args.algo.upper()} on {args.env}")
     plt.show()
 
-    render_env = gym.make("CartPole-v1", render_mode="human")
-    for _ in range(10):
-        run_episode(render_env, policy)
-    render_env.close()
+    # generate gif
+    make_gif(env, policy, args.gif)
 
 
 if __name__ == "__main__":
