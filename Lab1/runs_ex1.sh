@@ -28,13 +28,13 @@
 
 
 # CNN
-python3 exercise1.py --model FlexibleCNN --layers 2 2 2 2
-python3 exercise1.py --model FlexibleCNN --layers 2 2 2 2 --residual
+python3 exercise1.py --model FlexibleCNN --layers 2 2 2 2 --scheduler
+python3 exercise1.py --model FlexibleCNN --layers 2 2 2 2 --residual --scheduler
 
-python3 exercise1.py --model FlexibleCNN --layers 3 4 6 3
-python3 exercise1.py --model FlexibleCNN --layers 3 4 6 3 --residual
+python3 exercise1.py --model FlexibleCNN --layers 3 4 6 3 --scheduler
+python3 exercise1.py --model FlexibleCNN --layers 3 4 6 3 --residual --scheduler
 
-python3 exercise1.py --model FlexibleCNN --layers 4 8 12 6
-python3 exercise1.py --model FlexibleCNN --layers 4 8 12 6 --residual
+python3 exercise1.py --model FlexibleCNN --layers 4 8 12 6 --scheduler
+python3 exercise1.py --model FlexibleCNN --layers 4 8 12 6 --residual --scheduler
 
 

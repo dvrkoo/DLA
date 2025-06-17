@@ -4,13 +4,12 @@ import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
-import torch.nn.functional as F
 from tqdm import tqdm
 import wandb
 
 from models import FlexibleMLP, FlexibleCNN
-from collections import defaultdict
-from dataloader import get_mnist_dataset, get_cifar10_dataset
+from dataloader import get_dataset
+from plot import gradient_norm_plot
 
 # Device setup
 device = torch.device(
@@ -22,37 +21,6 @@ device = torch.device(
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
-
-
-def gradient_norm_plot(model, dataloader, device, args, save_path):
-    data, labels = next(iter(dataloader))
-    data, labels = data.to(device), labels.to(device)
-    model.zero_grad()
-    loss = F.cross_entropy(model(data), labels)
-    loss.backward()
-
-    # collect norms
-    sums, counts = defaultdict(float), defaultdict(int)
-    for name, p in model.named_parameters():
-        if p.grad is None:
-            continue
-        # assume "layers.{i}.weight" or "layers.{i}.bias"
-        idx = int(name.split(".")[1])
-        sums[idx] += p.grad.norm().item()
-        counts[idx] += 1
-
-    avg_norms = [sums[i] / counts[i] for i in range(len(sums))]
-
-    # plot
-    plt.figure(figsize=(6, 4))
-    plt.bar(range(len(avg_norms)), avg_norms)
-    plt.xlabel("Block index")
-    plt.ylabel("Avg gradient L2 norm")
-    plt.title("Gradient norms per depth level")
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
-    wandb.log({"grad_norms": wandb.Image(save_path)})
 
 
 def train_one_epoch(model, optimizer, criterion, train_loader, device):
@@ -138,12 +106,12 @@ def get_model(
 
 
 def main(args):
+    ds_train, ds_val, ds_test = get_dataset(args.model)
+
     if args.model == "FlexibleMLP":
-        ds_train, ds_val, ds_test = get_mnist_dataset()
         run_name = f"{args.model}_lr{args.lr}_batch{args.batch_size}_hidden{args.hidden_size}_depth{args.depth}_residual{args.residual}_norm{args.norm}"
     else:
-        ds_train, ds_val, ds_test = get_cifar10_dataset()
-        run_name = f"{args.model}_lr{args.lr}_levels_{args.layers}_batch{args.batch_size}_residual{args.residual}_norm{args.norm}"
+        run_name = f"{args.model}_lr{args.lr}_layers_{args.layers}_batch{args.batch_size}_residual{args.residual}_scheduler{args.scheduler}"
 
     save_dir = os.path.join("runs", args.model, run_name)
     os.makedirs(save_dir, exist_ok=True)
