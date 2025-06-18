@@ -2,7 +2,7 @@ import gym
 import torch
 import imageio
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 
 def make_gif(env_or_name, policy, gif_path, episodes=1, maxlen=500):

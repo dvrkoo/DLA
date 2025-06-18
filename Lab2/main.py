@@ -14,7 +14,7 @@ from utils import make_gif
 np.bool8 = np.bool_
 
 # Device config
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 
 # ============================
@@ -95,46 +95,81 @@ def train_ppo(env, policy, value_net, args):
     p_optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
     v_optimizer = torch.optim.Adam(value_net.parameters(), lr=args.lr)
     history = []
+
     for ep in range(args.episodes):
+        # 1) Rollout
         obs, _ = env.reset(seed=args.seed)
-        memories = []
+        memories = []  # list of (obs_t, action, old_logp, reward, value)
         done = False
         while not done:
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
-            dist = Categorical(policy(obs_t) / args.temperature)
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=args.device)
+            probs = policy(obs_t)
+            dist = Categorical(probs / args.temperature)
             action = dist.sample()
             logp = dist.log_prob(action)
             value = value_net(obs_t)
+
             obs, reward, terminated, truncated, _ = env.step(action.item())
-            memories.append((obs_t, action, logp, reward, value))
             done = bool(terminated or truncated)
-        # compute returns and advantages
+            # Store detached values to avoid gradient issues
+            memories.append(
+                (obs_t.detach(), action.detach(), logp.detach(), reward, value.detach())
+            )
+
+        # 2) Compute returns & advantages
         rewards = [m[3] for m in memories]
-        returns = compute_returns(rewards, args.gamma)
+        returns = compute_returns(rewards, args.gamma).detach()
         values = torch.stack([m[4] for m in memories])
-        advantages = returns - values.detach()
-        # PPO update
+        advantages = returns - values
+
+        # 3) PPO update: accumulate losses, then do one backward per network
         for _ in range(args.ppo_epochs):
+            policy_losses = []
+            value_losses = []
+
             for idx, (obs_t, action, old_logp, _, _) in enumerate(memories):
-                dist = Categorical(policy(obs_t) / args.temperature)
-                logp = dist.log_prob(action)
-                ratio = (logp - old_logp).exp()
-                adv = advantages[idx]
+                # Re-compute distribution (no in-place)
+                probs = policy(obs_t)
+                dist = Categorical(probs / args.temperature)
+                new_logp = dist.log_prob(action)
+
+                # Ratio & clipped surrogate
+                ratio = (new_logp - old_logp).exp()
+                adv = advantages[idx].detach()  # Detach advantage
+
                 surr1 = ratio * adv
                 surr2 = torch.clamp(ratio, 1 - args.clip, 1 + args.clip) * adv
-                p_loss = -torch.min(surr1, surr2)
-                v_loss = F.mse_loss(value_net(obs_t), returns[idx])
-                p_optimizer.zero_grad()
-                p_loss.backward()
-                p_optimizer.step()
-                v_optimizer.zero_grad()
-                v_loss.backward()
-                v_optimizer.step()
+                policy_losses.append(-torch.min(surr1, surr2))
+
+                # Value loss
+                value_losses.append(F.mse_loss(value_net(obs_t), returns[idx]))
+
+            # Policy network update
+            p_optimizer.zero_grad()
+            policy_loss = torch.stack(policy_losses).mean()
+            policy_loss.backward()
+            p_optimizer.step()
+
+            # Value network update
+            v_optimizer.zero_grad()
+            value_loss = torch.stack(value_losses).mean()
+            value_loss.backward()
+            v_optimizer.step()
+
         episode_reward = sum(rewards)
         history.append(episode_reward)
+
         if ep % args.log_interval == 0:
-            wandb.log({"ppo_reward": episode_reward, "episode": ep})
+            wandb.log(
+                {
+                    "episode": ep,
+                    "ppo_reward": episode_reward,
+                    "policy_loss": policy_loss.item(),
+                    "value_loss": value_loss.item(),
+                }
+            )
             print(f"PPO Ep {ep}: Reward {episode_reward:.2f}")
+
     return history
 
 
@@ -156,6 +191,7 @@ def main():
     parser.add_argument("--ppo_epochs", type=int, default=4)
     parser.add_argument("--clip", type=float, default=0.2)
     parser.add_argument("--gif", type=str, default="policy.gif")
+    parser.add_argument("--device", type=str, default=device)
     args = parser.parse_args()
 
     wandb.init(
