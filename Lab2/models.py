@@ -2,6 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# ============================
+# Policy and Value Networks
+# ============================
 class PolicyNet(nn.Module):
     def __init__(self, obs_dim, n_actions):
         super().__init__()

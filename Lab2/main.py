@@ -1,14 +1,13 @@
-import os
 import argparse
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import wandb
-from utils import make_gif
+from utils import make_gif, compute_returns
+from models import PolicyNet, ValueNet
 
 # Monkey-patch for numpy.bool8 compatibility
 np.bool8 = np.bool_
@@ -17,50 +16,41 @@ np.bool8 = np.bool_
 device = torch.device("cpu")
 
 
-# ============================
-# Policy and Value Networks
-# ============================
-class PolicyNet(nn.Module):
-    def __init__(self, obs_dim, n_actions):
-        super().__init__()
-        self.fc1 = nn.Linear(obs_dim, 128)
-        self.fc2 = nn.Linear(128, n_actions)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return F.softmax(self.fc2(x), dim=-1)
-
-
-class ValueNet(nn.Module):
-    def __init__(self, obs_dim):
-        super().__init__()
-        self.fc1 = nn.Linear(obs_dim, 128)
-        self.fc2 = nn.Linear(128, 1)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.fc2(x).squeeze(-1)
-
-
-# ============================
-# Utility Functions
-# ============================
-def compute_returns(rewards, gamma):
-    returns = []
-    G = 0
-    for r in reversed(rewards):
-        G = r + gamma * G
-        returns.insert(0, G)
-    return torch.tensor(returns, dtype=torch.float32, device=device)
+def evaluate_policy(
+    env, policy, episodes=5, maxlen=500, device="cpu", deterministic=False
+):
+    policy.eval()
+    rewards = []
+    for _ in range(episodes):
+        obs, _ = env.reset()
+        total_r = 0
+        done = False
+        while not done:
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
+            with torch.no_grad():
+                probs = policy(obs_t)
+            if deterministic:
+                action = torch.argmax(probs).item()
+            else:
+                dist = Categorical(probs)
+                action = dist.sample().item()
+            obs, reward, terminated, truncated, _ = env.step(action)
+            total_r += reward
+            done = bool(terminated or truncated)
+        rewards.append(total_r)
+    policy.train()
+    return np.mean(rewards), np.std(rewards)
 
 
 # ============================
 # REINFORCE
 # ============================
-def train_reinforce(env, policy, args):
+def train_reinforce(env, eval_env, policy, args):
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
     rewards_history = []
+
     for ep in range(args.episodes):
+        # 1) Rollout (always stochastic for training)
         obs, _ = env.reset(seed=args.seed)
         log_probs, rewards = [], []
         done = False
@@ -69,29 +59,68 @@ def train_reinforce(env, policy, args):
             dist = Categorical(policy(obs_t) / args.temperature)
             action = dist.sample()
             log_probs.append(dist.log_prob(action))
+
             obs, reward, terminated, truncated, _ = env.step(action.item())
             rewards.append(reward)
             done = bool(terminated or truncated)
 
+        # 2) Compute returns & policy gradient update
         returns = compute_returns(rewards, args.gamma)
+        total_reward = sum(rewards)
+        rewards_history.append(total_reward)
+
+        # Standardize and compute loss
         log_probs = torch.stack(log_probs)
-        loss = -(log_probs * (returns - returns.mean()) / (returns.std() + 1e-9)).mean()
+        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        loss = -(log_probs * returns).mean()
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        total_reward = sum(rewards)
-        rewards_history.append(total_reward)
+
+        # 3) Logging & periodic evaluation
         if ep % args.log_interval == 0:
-            wandb.log({"reinforce_reward": total_reward, "episode": ep})
-            print(f"REINFORCE Ep {ep}: Reward {total_reward:.2f}")
+            # Training metric
+            wandb.log(
+                {
+                    "episode": ep,
+                    "train_reward": total_reward,
+                    "policy_loss": loss.item(),
+                    "episode_length": len(rewards),
+                }
+            )
+
+            # Deterministic or stochastic evaluation
+            eval_mean, eval_std = evaluate_policy(
+                eval_env,
+                policy,
+                episodes=5,
+                maxlen=500,
+                device=device,
+                deterministic=args.deterministic,
+            )
+            wandb.log(
+                {
+                    "episode": ep,
+                    "eval_mean_reward": eval_mean,
+                    "eval_std_reward": eval_std,
+                    "deterministic": args.deterministic,
+                }
+            )
+
+            print(
+                f"REINFORCE Ep {ep}: "
+                f"Train {total_reward:.2f}, "
+                f"Eval {eval_mean:.2f}±{eval_std:.2f}"
+            )
+
     return rewards_history
 
 
 # ============================
 # PPO
 # ============================
-def train_ppo(env, policy, value_net, args):
+def train_ppo(env, eval_env, policy, value_net, args):
     p_optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
     v_optimizer = torch.optim.Adam(value_net.parameters(), lr=args.lr)
     history = []
@@ -104,7 +133,7 @@ def train_ppo(env, policy, value_net, args):
         while not done:
             obs_t = torch.tensor(obs, dtype=torch.float32, device=args.device)
             probs = policy(obs_t)
-            dist = Categorical(probs / args.temperature)
+            dist = Categorical(probs / args.temperature)  # Recompute for value
             action = dist.sample()
             logp = dist.log_prob(action)
             value = value_net(obs_t)
@@ -169,6 +198,27 @@ def train_ppo(env, policy, value_net, args):
                 }
             )
             print(f"PPO Ep {ep}: Reward {episode_reward:.2f}")
+            # evaluate the policy
+            eval_mean, eval_std = evaluate_policy(
+                eval_env,
+                policy,
+                episodes=5,
+                maxlen=500,
+                device=args.device,
+                deterministic=args.deterministic,
+            )
+            wandb.log(
+                {
+                    "train_reward": episode_reward,
+                    "eval_mean_reward": eval_mean,
+                    "eval_std_reward": eval_std,
+                    "policy_loss": policy_loss.item(),
+                    "value_loss": value_loss.item(),
+                    "episode": ep,
+                    "episode_length": len(rewards),
+                }
+            )
+            print(f"PPo Ep {ep}: Eval Mean {eval_mean:.2f} ± {eval_std:.2f}")
 
     return history
 
@@ -187,16 +237,21 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=2112)
-    parser.add_argument("--log_interval", type=int, default=100)
+    parser.add_argument("--log_interval", type=int, default=50)
     parser.add_argument("--ppo_epochs", type=int, default=4)
     parser.add_argument("--clip", type=float, default=0.2)
     parser.add_argument("--gif", type=str, default="policy.gif")
     parser.add_argument("--device", type=str, default=device)
+    parser.add_argument(
+        "--deterministic", action="store_true", help="Use deterministic policy (argmax)"
+    )
+
     args = parser.parse_args()
 
     wandb.init(
-        project="rl-algos",
-        name=f"reinforce_{args.env}_{args.algo}_temperature{args.temperature}_lr{args.lr}_gamma{args.gamma}",
+        project=f"rl-algos-{args.env}",
+        name=f"reinforce_{args.env}_{args.algo}_temperature{args.temperature}_lr{args.lr}_gamma{args.gamma}_deterministic{args.deterministic}",
+        group="deterministic" if args.deterministic else "stochastic",
         config=vars(args),
     )
 
@@ -204,15 +259,16 @@ def main():
     np.random.seed(args.seed)
 
     env = gym.make(args.env)
+    eval_env = gym.make(args.env)
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
     policy = PolicyNet(obs_dim, n_actions).to(device)
 
     if args.algo == "ppo":
         value_net = ValueNet(obs_dim).to(device)
-        history = train_ppo(env, policy, value_net, args)
+        history = train_ppo(env, eval_env, policy, value_net, args)
     else:
-        history = train_reinforce(env, policy, args)
+        history = train_reinforce(env, eval_env, policy, args)
 
     # plot learning curve
     plt.plot(history)
@@ -223,6 +279,9 @@ def main():
 
     # generate gif
     make_gif(env, policy, args.gif)
+    eval_env.close()
+    env.close()
+    wandb.finish()
 
 
 if __name__ == "__main__":
