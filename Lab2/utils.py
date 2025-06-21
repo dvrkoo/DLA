@@ -2,7 +2,16 @@ import gym
 import torch
 import imageio
 from gym.error import VersionNotFound
+import numpy as np
 import re
+
+
+# Fix numpy compatibility issues
+if not hasattr(np, "bool8"):
+    np.bool8 = np.bool_
+if not hasattr(np, "bool9"):
+    np.bool9 = np.bool_
+
 
 device = torch.device("cpu")
 
@@ -11,11 +20,28 @@ device = torch.device("cpu")
 # Utility Functions
 # ============================
 def compute_returns(rewards, gamma):
-    returns = []
-    G = 0
-    for r in reversed(rewards):
-        G = r + gamma * G
-        returns.insert(0, G)
+    """
+    Compute discounted returns efficiently.
+
+    Args:
+        rewards: List or numpy array of rewards
+        gamma: Discount factor
+
+    Returns:
+        Tensor of discounted returns
+    """
+    # Convert to numpy array if it's a list
+    if isinstance(rewards, list):
+        rewards = np.array(rewards)
+
+    # Efficient vectorized implementation
+    returns = np.zeros_like(rewards, dtype=np.float32)
+
+    # Compute returns in reverse order
+    returns[-1] = rewards[-1]
+    for i in range(len(rewards) - 2, -1, -1):
+        returns[i] = rewards[i] + gamma * returns[i + 1]
+
     return torch.tensor(returns, dtype=torch.float32, device=device)
 
 

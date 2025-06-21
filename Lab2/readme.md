@@ -63,3 +63,20 @@ python main.py \
 --gif            <str>   (default: policy.gif)      # File path for output GIF
 
 ```
+
+# Results
+## Results on CartPole-v1
+![](gifs/cartpole.png)
+All the experiments are available at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/rl-ablation-study-CartPole-v1?nw=nwuserniccolomarini
+
+
+![plots](gifs/cartpole.gif)
+
+## Results on LunarLander-v3
+
+![plots](gifs/lunar.png)
+
+
+All the experiments are available at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/rl-ablation-study-LunarLander-v3?nw=nwuserniccolomarini
+
+![plots](gifs/lunar.gif)
