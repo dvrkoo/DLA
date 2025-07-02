@@ -17,19 +17,19 @@ This lab explores deep neural architectures using MLPs and CNNs, with a focus on
   > _Deep Residual Learning for Image Recognition_ – Kaiming He et al., CVPR 2016
 - Class Activation Maps (CAMs), based on:
   > _Learning Deep Features for Discriminative Localization_ – Zhou et al., CVPR 2016
-
+- Exercise 2 focuses on using previous models to perform Knowledge Distillation
 
 ---
 
-### 🤖 Lab 2 – Adversarial Attacks & OOD Detection
+### 🧠 Lab 2 – Reinforcement Learning with Policy Gradients
 
-This lab introduces techniques in **Adversarial Machine Learning** and **Out-of-Distribution (OOD) Detection**, including:
+This lab explores core ideas in Reinforcement Learning (RL) using Policy Gradient methods, including:
 
-- Evaluation metrics and pipelines for OOD detection
-- Targeted and untargeted **FGSM attacks**:
-  > _Explaining and Harnessing Adversarial Examples_ – Goodfellow et al., 2015
-- Augmentation strategies to improve adversarial robustness
+- The REINFORCE algorithm for training stochastic policies aswell as PPO algorithm
 
+- Implementing and visualizing learning in environments like CartPole and LunarLander
+
+- Key concepts: reward signals, return estimation, and gradient-based policy updates
 
 ---
 
@@ -40,7 +40,6 @@ This lab demonstrates two approaches to training a sentiment classifier using Di
 - ✅ **Full fine-tuning** of the DistilBERT model
 - ⚡ **Efficient fine-tuning** using LoRA (PEFT):
   > _LoRA: Low-Rank Adaptation of Large Language Models_ – Hu et al., 2021
-- Optional logging using **Weights & Biases** and **Comet ML**
 - Includes a baseline model using SVM + BERT embeddings
 
 ---
@@ -52,3 +51,5 @@ This lab demonstrates two approaches to training a sentiment classifier using Di
 ```bash
 git clone https://github.com/dvrkoo/DLA.git
 cd DLA
+pip install -r requirements.txt
+```
