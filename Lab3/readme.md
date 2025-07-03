@@ -79,8 +79,6 @@ By default, logs are sent to both:
 
     Weights & Biases
 
-    Comet ML
-
 To enable wandb logging:
 
 export WANDB_API_KEY=your_key_here
@@ -95,7 +93,7 @@ More examples can be seen at: https://wandb.ai/niccolo-marini-universit-degli-st
 
 #### 1. Learning Rate is Critical for Full Fine-Tuning
 
-- The difference in performance for full fine-tuning between a learning rate of `2e-5` (precision: **0.836**) and `2e-4` (precision: **0.792**) is massive.
+- The difference in performance for full fine-tuning between a learning rate of `2e-5` (precision: **0.836**) and `2e-4` (precision: **0.792**) is big.
 - **Conclusion**: The higher learning rate (`2e-4`) is too aggressive for full fine-tuning on this dataset, likely causing training instability and leading to a much worse model.
 
 #### 2. LoRA is More Stable and Outperforms Full Fine-Tuning
@@ -155,5 +153,7 @@ MIT License
     Weights & Biases
 
     Rotten Tomatoes Dataset
+
+    sst2 Dataset
 
 ---
