@@ -108,3 +108,5 @@ All the experiments are available at: https://wandb.ai/niccolo-marini-universit-
 - The Full Suite of Improvements Provides the Most Robust Learning: The agent with all features enabled (PPO | + NormAdv | + GradClip | + ClipVal | + Entropy) achieves the best overall performance. It reaches a score over +200 by step 4 and maintains a high average reward throughout the training process. The added stability from gradient/value clipping and the exploration encouraged by the entropy bonus help it find and refine a good policy faster and more reliably than the other variants.
 
 - Conclusion: The results from the LunarLander-v2 experiments are definitive. They confirm that PPO is vastly superior to REINFORCE for complex tasks. Furthermore, the ablation study within PPO shows that while the core algorithm works, advantage normalization is the critical component for stable learning, with additional improvements like clipping and entropy regularization contributing to even faster and more robust convergence.
+
+![plots](gifs/lunar.gif)
