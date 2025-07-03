@@ -113,8 +113,6 @@ wandb login
 
 Metrics and model parameters are logged under the project names `Lab1_DLA_MLP`, `Lab1_DLA_CNN`, and `distillation_cifar10`.
 
-Of course. Here is the data presented as a markdown table, followed by some brief observations.
-
 ### Model Performance Comparison
 
 | Model             | Test Acc (%) | Test Loss |   Params   |
@@ -138,13 +136,6 @@ _Note: A horizontal rule has been added to visually separate the two experimenta
 3.  **Effectiveness of Distillation:** The "Student Distilled" model successfully closes this performance gap. It achieves an accuracy that is nearly identical to the much larger Teacher model, demonstrating the effectiveness of the knowledge distillation technique.
 
 4.  **Accuracy vs. Loss:** Interestingly, while the "Student Distilled" model has a much better accuracy than the baseline, its test loss is higher. This is a common outcome in knowledge distillation, as the model is optimized to match the teacher's output probabilities, not just to minimize its own classification loss.
-
-## 🔧 Extending & Customizing
-
-- **Add new optimizers**: modify `exercise1.py` or `exercise2.py` to support `--opt sgd|adam`.
-- **Advanced schedulers**: integrate CyclicalLR, StepLR, or CosineAnnealingWarmRestarts.
-- **Data augmentation**: enhance `dataloader.py` with transforms (CutMix, MixUp, etc.).
-- **Hyperparameter sweeps**: use W\&B Sweeps to explore depth, width, α, T, etc.
 
 ## 📚 References
 
