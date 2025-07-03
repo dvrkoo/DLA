@@ -58,13 +58,6 @@ python3 exercise1.py --model FlexibleMLP \
   - `--norm`: enable BatchNorm
   - `--scheduler`: use cosine annealing LR
 
-Results (check `runs/<model>/<run_name>/`) include:
-
-- `model.pth` checkpoint
-- `params.txt` hyperparameters
-- `training_curves.png` loss/accuracy plots
-- `gradient_norms.png` (for MLP)
-
 ## 🧪 Exercise 2: Knowledge Distillation on CIFAR-10
 
 Experiment results can be seen at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/knowledge-distillation-cifar10
