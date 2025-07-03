@@ -114,6 +114,8 @@ More examples can be seen at: https://wandb.ai/niccolo-marini-universit-degli-st
 
 ![alt text](./plots/sst2_precision.png)
 
+All the experiments can be seen at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/distilbert-sst2
+
 🧠 Notes
 
       Efficient fine-tuning can cut training time and memory use by >90% while maintaining similar accuracy.
