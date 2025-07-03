@@ -15,8 +15,6 @@ This lab explores deep neural architectures using MLPs and CNNs, with a focus on
 - Training CNNs on CIFAR-like datasets
 - Implementation of **ResNet-style skip connections**, inspired by:
   > _Deep Residual Learning for Image Recognition_ – Kaiming He et al., CVPR 2016
-- Class Activation Maps (CAMs), based on:
-  > _Learning Deep Features for Discriminative Localization_ – Zhou et al., CVPR 2016
 - Exercise 2 focuses on using previous models to perform Knowledge Distillation
 
 ---
@@ -35,7 +33,7 @@ This lab explores core ideas in Reinforcement Learning (RL) using Policy Gradien
 
 ### 🎯 Lab 3 – Efficient Fine-Tuning for NLP (Sentiment Classification)
 
-This lab demonstrates two approaches to training a sentiment classifier using DistilBERT on the Rotten Tomatoes dataset:
+This lab demonstrates two approaches to training a sentiment classifier using DistilBERT on the Rotten Tomatoes and sst2 dataset:
 
 - ✅ **Full fine-tuning** of the DistilBERT model
 - ⚡ **Efficient fine-tuning** using LoRA (PEFT):
