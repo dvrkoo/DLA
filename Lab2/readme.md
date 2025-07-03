@@ -65,10 +65,27 @@ python main.py \
 ```
 
 # Results
+
 ## Results on CartPole-v1
+
 ![](gifs/cartpole.png)
 All the experiments are available at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/rl-ablation-study-CartPole-v1?nw=nwuserniccolomarini
 
+### Observations
+
+- PPO Dominates in Sample Efficiency: The most striking result is the speed at which all PPO variants solve the environment. The PPO | (Baseline) agent reaches the maximum score of 500 by the second evaluation step (~100 episodes) and stays there. This demonstrates that the core actor-critic structure with GAE is incredibly effective for a simple task like CartPole.
+
+- REINFORCE Shows Clear Benefit from Improvements: Unlike the PPO variants, the REINFORCE runs clearly demonstrate the value of each improvement.
+
+  - The REINFORCE | (Baseline) struggles, learning very slowly and never reliably solving the environment.
+
+  - Adding + NormAdv provides a massive boost, allowing the agent to learn much faster and achieve higher scores.
+
+  - The fully-equipped REINFORCE | + NormAdv | + GradClip | + Entropy performs the best of the three, converging faster and more stably towards the maximum score. This is a perfect illustration of how modern improvements can make a classic (but unstable) algorithm viable.
+
+- CartPole is Too Easy for PPO Ablation: Because even the baseline PPO solves the task almost instantly, it's difficult to meaningfully compare the different PPO improvements on this environment. They all hit the performance ceiling immediately. The true benefit of features like Value Clipping and a tuned Entropy bonus would be more visible on a harder task where stability and exploration are more critical.
+
+- Conclusion: The results confirm that PPO is a significantly more powerful and sample-efficient algorithm than REINFORCE. For REINFORCE, the ablation study successfully shows that improvements like advantage normalization are not just helpful but essential for stable learning. For PPO, CartPole serves as a "sanity check" that the implementation is correct, but it is not complex enough to differentiate between the advanced PPO configurations.
 
 ![plots](gifs/cartpole.gif)
 
@@ -76,7 +93,18 @@ All the experiments are available at: https://wandb.ai/niccolo-marini-universit-
 
 ![plots](gifs/lunar.png)
 
-
 All the experiments are available at: https://wandb.ai/niccolo-marini-universit-degli-studi-di-firenze/rl-ablation-study-LunarLander-v3?nw=nwuserniccolomarini
 
-![plots](gifs/lunar.gif)
+### Observations
+
+- REINFORCE Fails Completely: As predicted, the fully-equipped REINFORCE agent is unable to learn a viable policy. Its evaluation reward starts negative (around -179) and never achieves a positive score. The agent consistently crashes, demonstrating that even with improvements like advantage normalization and gradient clipping, the high variance of the REINFORCE algorithm prevents it from solving this complex environment. This run serves as an excellent baseline showing the algorithm's limitations.
+
+- PPO Can Learn, but Stability is Key: All PPO variants show a clear ability to learn, quickly moving from large negative scores to positive ones. However, the ablation study reveals a clear hierarchy in performance and stability:
+
+  - Baseline PPO (PPO | (Baseline)) is highly unstable. While it shows flashes of high performance (reaching +244 at step 25), it's erratic and cannot maintain a good policy, often dipping back down to lower scores.
+
+  - Adding Advantage Normalization (PPO | + NormAdv) provides a massive improvement. This agent learns much more stably and is the first to consistently solve the environment, reaching over +200 and staying there in the latter half of training. This highlights normalize_advantages as the single most critical improvement for PPO on this task.
+
+- The Full Suite of Improvements Provides the Most Robust Learning: The agent with all features enabled (PPO | + NormAdv | + GradClip | + ClipVal | + Entropy) achieves the best overall performance. It reaches a score over +200 by step 4 and maintains a high average reward throughout the training process. The added stability from gradient/value clipping and the exploration encouraged by the entropy bonus help it find and refine a good policy faster and more reliably than the other variants.
+
+- Conclusion: The results from the LunarLander-v2 experiments are definitive. They confirm that PPO is vastly superior to REINFORCE for complex tasks. Furthermore, the ablation study within PPO shows that while the core algorithm works, advantage normalization is the critical component for stable learning, with additional improvements like clipping and entropy regularization contributing to even faster and more robust convergence.

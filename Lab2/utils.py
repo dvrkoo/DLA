@@ -1,7 +1,6 @@
 import gym
 import torch
 import imageio
-from gym.error import VersionNotFound
 import numpy as np
 import re
 
@@ -19,6 +18,46 @@ device = torch.device("cpu")
 # ============================
 # Utility Functions
 # ============================
+
+
+def compute_gae_returns(rewards, values, gamma=0.99, lam=0.95, device="cpu"):
+    """
+    Computes the Generalized Advantage Estimation (GAE) and corresponding returns.
+
+    Args:
+        rewards (list or np.ndarray): List of rewards for an episode.
+        values (torch.Tensor): Tensor of value estimates for each state in the episode.
+        gamma (float): Discount factor.
+        lam (float): GAE lambda parameter.
+        device (torch.device): The device to use for tensors.
+
+    Returns:
+        A tuple of (advantages, returns) as torch.Tensors.
+    """
+    # Ensure values is a flat tensor
+    values = values.squeeze().detach()
+
+    # Add a dummy value at the end for the last state. If the episode is done,
+    # the value of the terminal state is 0.
+    next_values = torch.cat([values[1:], torch.tensor([0.0], device=device)])
+
+    # Convert rewards to a tensor
+    rewards_t = torch.tensor(rewards, dtype=torch.float32, device=device)
+
+    # Calculate GAE
+    advantages = torch.zeros_like(rewards_t)
+    last_gae_lam = 0
+    for t in reversed(range(len(rewards))):
+        delta = rewards_t[t] + gamma * next_values[t] - values[t]
+        last_gae_lam = delta + gamma * lam * last_gae_lam
+        advantages[t] = last_gae_lam
+
+    # Calculate returns by adding advantages to the value estimates
+    returns = advantages + values
+
+    return advantages, returns
+
+
 def compute_returns(rewards, gamma):
     """
     Compute discounted returns efficiently.
