@@ -7,7 +7,6 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import wandb
 
-# Assuming these are in your utils.py and models.py
 from utils import make_gif, compute_returns, compute_gae_returns
 from models import PolicyNet, ValueNet
 
@@ -54,7 +53,6 @@ def evaluate_policy(
 # REINFORCE with improvements
 # ============================
 def train_reinforce(env, eval_env, policy, args):
-    # (This function is already clean, no changes needed)
     optimizer = torch.optim.Adam(
         policy.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
@@ -327,8 +325,6 @@ def main():
     # Output
     parser.add_argument("--gif", type=str, default="policy.gif")
 
-    # --- REFACTOR: Removed unused/redundant arguments: --temperature, --enhanced
-
     args = parser.parse_args()
     args.device = device
 
@@ -361,7 +357,6 @@ def main():
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
 
-    # --- REFACTOR: Critical fix to use command-line arguments for network architecture ---
     policy = PolicyNet(
         obs_dim, n_actions, hidden_size=args.hidden_size, num_layers=args.num_layers
     ).to(device)
@@ -382,7 +377,6 @@ def main():
     else:
         history = train_reinforce(env, eval_env, policy, args)
 
-    # --- REFACTOR: More informative plot title ---
     plt.figure(figsize=(10, 6))
     plt.plot(history)
     plt.xlabel("Episode")

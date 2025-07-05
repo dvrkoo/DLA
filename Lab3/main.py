@@ -227,10 +227,8 @@ def main():
     )
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
 
-    # Logging
     parser.add_argument("--wandb", action="store_true", help="Enable wandb logging")
 
-    # PEFT/LoRA arguments
     parser.add_argument(
         "--peft",
         action="store_true",
